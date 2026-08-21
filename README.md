@@ -1,257 +1,369 @@
-# “大众创享”作品评分系统
+# artRatingSystem 工具与 Skills 指南
 
-一个供管理员上传和管理作品、供评委浏览并评分的 Web 应用。项目采用前后端分离结构：后端是 FastAPI + SQLite，前端是 Vue 3 + Vite；开发环境由 Vite 将 API 和上传文件请求代理到 FastAPI。
+本文档只介绍仓库中的 `tools/` 工具脚本和 `.agents/skills/` 项目 Skills，包括各文件的用途、调用方法，以及将 Skill 导入 Codex、Trae 和 Claude Code 的方式。
 
-## 主要功能
+## 目录
 
-- 管理员上传摄影、文字、视频和手工作品，编辑、隐藏或删除作品。
-- 邀请码注册评委账号，使用 Cookie 保存登录会话。
-- 评委按“创意、表现力、完成度”三个维度进行 1～10 分评分。
-- 展示作品平均分、评分人数和当前用户的评分状态。
-- 图片多图展示和缩略图、MP4 视频播放、明暗主题切换。
+```text
+artRatingSystem/
+├─ tools/
+│  ├─ start.bat
+│  ├─ start.sh
+│  ├─ stop.sh
+│  ├─ download.bat
+│  ├─ download.sh
+│  ├─ upload.bat
+│  └─ upload.sh
+└─ .agents/
+   └─ skills/
+      └─ art-rating-system-maintainer/
+         ├─ SKILL.md
+         └─ agents/
+            └─ openai.yaml
+```
 
-## 技术栈
+所有 `tools/` 脚本都会先进入脚本所在目录，再通过 `cd ..` 返回项目根目录，因此可以从项目根目录调用，也可以直接在文件管理器中运行 Windows 批处理脚本。
 
-| 层次 | 技术 |
-| --- | --- |
-| 后端 | Python、FastAPI、Uvicorn |
-| 数据库 | SQLite（开启 WAL 和外键约束） |
-| 前端 | Vue 3、Vue Router、Vite |
-| 文件处理 | Pillow（图片缩略图） |
-| 可选反向代理 | Nginx |
+## tools 工具脚本
 
-## 在 Windows 上运行
+### 前置准备
 
-### 环境要求
+运行服务前应已准备好：
 
-- Windows 10/11
-- Python 3.10 或更高版本（`py` 或 `python` 命令可用）
-- Node.js 20 LTS 或更高版本（包含 `npm`）
+- 后端 Windows 虚拟环境：`backend/venv/Scripts/python.exe`
+- 后端 Linux 虚拟环境：`backend/venv/bin/python`
+- 前端依赖：`frontend/node_modules/`
+- 可用的 `npm` 命令
 
-在 `tools` 文件夹中双击 `start.bat`，或在项目根目录的 PowerShell / CMD 中运行：
+Git 同步脚本要求：
+
+- 当前目录属于有效的 Git 仓库；
+- 已配置名为 `origin` 的远端；
+- 当前账号有拉取或推送 `main` 分支的权限；
+- 推送前已经确认工作区中没有不应提交的文件。
+
+### `start.bat`
+
+Windows 服务启动脚本。
+
+作用：
+
+- 打开名为 `Art Rating System - Backend` 的 CMD 窗口；
+- 在 `backend/` 中使用 `backend/venv/Scripts/python.exe main.py` 启动后端；
+- 打开名为 `Art Rating System - Frontend` 的 CMD 窗口；
+- 在 `frontend/` 中执行 `npm.cmd run dev` 启动前端；
+- 两个服务窗口相互独立，关闭某个窗口即可结束该窗口中的服务。
+
+从项目根目录运行：
 
 ```bat
 tools\start.bat
 ```
 
-首次运行会自动：
+也可以在 Windows 文件管理器中双击 `tools/start.bat`。
 
-1. 在 `backend/venv` 创建 Windows Python 虚拟环境；
-2. 安装 `backend/requirements.txt` 中的后端依赖；
-3. 在缺少 `frontend/node_modules` 时执行 `npm install`；
-4. 分别打开“后端”和“前端”两个可见终端窗口，并在各自窗口内直接运行服务、显示日志。
+该脚本只负责启动，不会创建虚拟环境，也不会安装 Python 或 npm 依赖。
 
-启动后访问：
+### `start.sh`
 
-- 前端：http://127.0.0.1:7999
-- 后端：http://127.0.0.1:8000
-- FastAPI 接口文档：http://127.0.0.1:8000/docs
+Linux 服务启动脚本。
 
-脚本不会把服务注册为后台服务。关闭后端终端只会停止后端，关闭前端终端只会停止前端；也可以在对应窗口按 `Ctrl+C` 停止服务。依赖已经安装后，可跳过安装检查以加快启动：
+作用：
 
-```bat
-tools\start.bat -SkipInstall
-```
+- 使用 `backend/venv/bin/python -m uvicorn` 启动后端；
+- 使用 `npm run dev` 启动前端；
+- 通过 `setsid` 将前后端放到后台运行；
+- 将 PID 写入 `logs/backend.pid` 和 `logs/frontend.pid`；
+- 将日志写入 `logs/backend.log` 和 `logs/frontend.log`；
+- 如果 PID 文件对应的进程仍然存在，则不会重复启动。
 
-实际启动逻辑位于 `tools/start-windows.ps1`，`tools/start.bat` 是方便双击和从 CMD 调用的入口。所有工具脚本都会先从 `tools/` 返回项目根目录，因此从任意当前目录调用都能正确定位项目文件。
-
-### Windows 常见问题
-
-- `py`/`python` 找不到：重新安装 Python，并勾选“Add Python to PATH”。
-- `npm.cmd` 找不到：安装 Node.js 后重新打开终端。
-- 端口占用：释放 7999（前端）或 8000（后端）端口。当前 Vite 配置启用了 `strictPort`，不会自动改用其他端口。
-- 从 Linux 复制了 `backend/venv`：虚拟环境不能跨系统使用，请删除该目录后重新运行 `tools\start.bat`。该目录只包含可重新安装的依赖，不应提交到 Git。
-
-## 在 Linux 上运行
-
-先准备依赖：
+首次使用时确保脚本可执行：
 
 ```bash
-python3 -m venv backend/venv
-backend/venv/bin/python -m pip install -r backend/requirements.txt
-cd frontend && npm install && cd ..
+chmod +x tools/start.sh tools/stop.sh
 ```
 
-然后使用仓库已有脚本：
+从项目根目录运行：
 
 ```bash
 ./tools/start.sh
+```
+
+启动后可查看日志：
+
+```bash
+tail -f logs/backend.log
+tail -f logs/frontend.log
+```
+
+### `stop.sh`
+
+Linux 服务停止脚本，与 `start.sh` 配套使用。
+
+作用：
+
+- 读取 `logs/frontend.pid` 和 `logs/backend.pid`；
+- 优先正常终止对应进程组；
+- 等待进程退出，必要时再强制结束；
+- 删除已经处理的 PID 文件；
+- 只适用于由 `tools/start.sh` 启动并记录 PID 的服务。
+
+调用方式：
+
+```bash
 ./tools/stop.sh
 ```
 
-Linux 的 `tools/start.sh` 会将服务放到后台，并把 PID 和日志写入 `logs/`；这与 Windows 前台运行脚本的行为不同。
+### `download.bat`
 
-## 项目结构
+Windows Git 拉取脚本。
+
+实际执行：
+
+```bash
+git pull origin main
+```
+
+调用方式：
+
+```bat
+tools\download.bat
+```
+
+该操作会把远端 `main` 合并到当前分支。工作区存在未提交改动时可能产生拒绝或冲突，应先运行 `git status`。
+
+### `download.sh`
+
+Linux Git 拉取脚本，作用与 `download.bat` 相同。
+
+调用方式：
+
+```bash
+./tools/download.sh
+```
+
+实际执行：
+
+```bash
+git pull origin main
+```
+
+### `upload.bat`
+
+Windows Git 提交和推送脚本。
+
+依次执行：
+
+```bash
+git add *
+git commit -m "auto commit 2"
+git push origin main
+```
+
+调用方式：
+
+```bat
+tools\upload.bat
+```
+
+注意：该脚本会直接暂存、提交和推送，不提供确认步骤。`git add *` 的暂存范围也不如手动指定文件精确，使用前必须检查：
+
+```bash
+git status --short
+git diff
+```
+
+### `upload.sh`
+
+Linux Git 提交和推送脚本。
+
+依次执行：
+
+```bash
+git add *
+git commit -m "auto commit"
+git push origin main
+```
+
+调用方式：
+
+```bash
+./tools/upload.sh
+```
+
+该脚本同样会直接提交和推送。建议在正式使用前手动确认变更范围；需要准确提交信息或只提交部分文件时，应直接使用 Git 命令，不要使用该脚本。
+
+## 项目 Skills
+
+仓库当前包含一个项目 Skill：`art-rating-system-maintainer`。
+
+### `art-rating-system-maintainer`
+
+位置：
 
 ```text
-artRatingSystem/
-├─ backend/                    FastAPI 后端、SQLite 数据和上传文件
-│  ├─ app/
-│  │  ├─ controllers/         HTTP 路由与请求/响应处理
-│  │  ├─ core/                配置、数据库和会话等基础设施
-│  │  ├─ repositories/        SQLite 数据访问层
-│  │  └─ services/            业务规则和跨数据表流程
-│  ├─ main.py                 ASGI 应用入口
-│  └─ requirements.txt        Python 依赖
-├─ frontend/                  Vue 单页应用
-│  ├─ src/
-│  │  ├─ assets/              全局样式和主题逻辑
-│  │  ├─ components/          可复用界面组件
-│  │  ├─ router/              页面路由与权限守卫
-│  │  ├─ services/            API 和前端登录状态封装
-│  │  └─ views/               路由页面
-│  ├─ index.html              Vite HTML 入口
-│  ├─ package.json            npm 依赖和命令
-│  ├─ package-lock.json       npm 锁定版本
-│  └─ vite.config.js          开发服务器和后端代理配置
-├─ nginx/                     Linux 部署用 Nginx 配置
-├─ tools/                     全部运行与 Git 同步脚本
-│  ├─ start.bat              Windows 前台启动入口
-│  ├─ start-windows.ps1      Windows 环境准备和进程管理
-│  ├─ start.sh / stop.sh     Linux 后台启动与停止脚本
-│  └─ upload.* / download.*  简单的 Git 推送/拉取辅助脚本
-└─ .gitignore                 运行产物和本地配置忽略规则
+.agents/skills/art-rating-system-maintainer/
+├─ SKILL.md
+└─ agents/openai.yaml
 ```
 
-### 后端目录与文件
+作用：
 
-后端采用 `controller -> service -> repository -> SQLite` 的分层方式。
+- 接收本项目的修改、修复、审查、文档和维护请求；
+- 修改前检查工作区并执行 `git pull origin main`；
+- 根据任务区分后端、前端、全栈、部署脚本和文档范围；
+- 后端任务禁止无关地读取前端文件；
+- 告知用户本次修改将在哪些目录和文件中进行；
+- 约束后端分层、数据库迁移、依赖和敏感文件处理；
+- 按任务范围执行检查，确认无误后暂存本次文件、提交并推送远端 `main`；
+- 禁止强推、覆盖用户改动或为了拉取而丢弃工作区内容。
 
-#### `backend/app/controllers/`
+`SKILL.md` 是主要指令文件。`agents/openai.yaml` 提供 Codex/ChatGPT 桌面端显示名称、简短说明和默认提示词。
 
-- `auth.py`：登录、注册、退出和修改密码接口。
-- `works.py`：作品列表、未评分列表、详情、上传、修改、删除和隐藏接口。
-- `ratings.py`：评分维度、个人评分查询和提交评分接口。
-- `admin.py`：邀请码生成/查询和用户列表接口，仅管理员可用。
-- `__init__.py`：标记控制器 Python 包。
+在 Codex 中可以显式调用：
 
-控制器只负责解析 HTTP 参数、检查权限和组织响应，主要业务判断应继续放在 `services/`。
+```text
+$art-rating-system-maintainer 修改 tools/start.sh
+```
 
-#### `backend/app/core/`
+当请求内容与 Skill 的 `description` 匹配时，Codex 也可以自动选择它。
 
-- `config.py`：项目路径、上传目录、数据库路径、应用信息、密钥和 CORS 来源；启动时创建上传子目录。
-- `database.py`：SQLite 连接、建表和轻量迁移。数据库首次启动时自动生成 `backend/data.db`。
-- `session.py`：使用 `itsdangerous` 签名 Cookie，并提供登录/管理员权限检查。
-- `__init__.py`：标记基础设施 Python 包。
+## 导入 Codex
 
-#### `backend/app/repositories/`
+### 项目级导入（推荐）
 
-- `user_repository.py`：用户查询、创建、密码哈希/校验和密码修改。
-- `invite_repository.py`：邀请码生成和列表查询。
-- `work_repository.py`：作品增删改查、排序、隐藏状态和多图路径解析。
-- `rating_repository.py`：用户评分的新增/更新和作品评分查询。
-- `__init__.py`：标记数据访问 Python 包。
+当前仓库已经采用 Codex 官方支持的项目级结构，无需额外安装：
 
-Repository 层集中编写 SQL。调整表结构时，应同时更新 `core/database.py` 的建表或迁移逻辑。
+```text
+.agents/skills/art-rating-system-maintainer/SKILL.md
+```
 
-#### `backend/app/services/`
+在仓库根目录或其子目录中启动 Codex。Codex 会从当前目录向上扫描到仓库根目录，并发现 `.agents/skills/` 中的 Skill。
 
-- `auth_service.py`：用户名和密码规则、登录、注册与改密流程。评委密码目前限定为 4 位数字，管理员新密码至少 6 位。
-- `rating_service.py`：评分维度、分数校验和聚合统计。
-- `work_service.py`：作品查询组合、上传格式校验、文件保存、缩略图生成和删除清理。
-- `__init__.py`：标记业务服务 Python 包。
+如果新增或修改的 Skill 没有立即出现，重新启动 Codex。
 
-#### 其他后端文件
+### 用户级导入
 
-- `backend/app/application.py`：创建 FastAPI 实例，注册 CORS、上传文件静态路径和全部路由，并在生命周期开始时初始化数据库。
-- `backend/main.py`：Uvicorn 使用的 `main:app` 入口，也支持直接执行 Python 文件。
-- `backend/requirements.txt`：后端运行依赖。
+如果希望该 Skill 在所有仓库中可用，将整个 Skill 文件夹复制到用户级目录：
 
-### 前端目录与文件
+macOS/Linux：
 
-#### `frontend/src/views/`
+```bash
+mkdir -p ~/.agents/skills
+cp -R .agents/skills/art-rating-system-maintainer ~/.agents/skills/
+```
 
-- `LoginView.vue`：登录页。
-- `RegisterView.vue`：邀请码注册页。
-- `HomeView.vue`：作品浏览、详情和评分主页面。
-- `AdminView.vue`：邀请码、用户和作品管理页面。
-- `UploadView.vue`：管理员上传作品页面，包含多文件预览。
-- `ChangePasswordView.vue`：登录用户修改密码页面。
-
-#### `frontend/src/components/`
-
-- `AppNavbar.vue`：导航栏、管理员入口、主题切换、改密和退出。
-- `WorkMedia.vue`：统一渲染文字、视频、单图或多图作品。
-
-#### `frontend/src/services/`
-
-- `api.js`：封装 `fetch`、Cookie 携带、401 跳转和媒体 URL。可通过 `VITE_API_BASE_URL` 指定独立后端地址。
-- `auth.js`：在 Vue 响应式状态和 `localStorage` 中维护当前用户，并封装退出操作。
-
-#### 其他前端文件夹和入口
-
-- `frontend/src/router/index.js`：页面路由、登录守卫和管理员守卫。
-- `frontend/src/assets/style.css`：全局布局、组件、响应式和明暗主题样式。
-- `frontend/src/assets/theme.js`：主题初始化、持久化和系统主题监听。
-- `frontend/src/App.vue`：顶层路由出口。
-- `frontend/src/main.js`：创建 Vue 应用并加载路由、样式和主题逻辑。
-- `frontend/index.html`：浏览器 HTML 外壳和 `#app` 挂载点。
-- `frontend/vite.config.js`：监听 `0.0.0.0:7999`，并将 `/api`、`/static/uploads` 代理到 `127.0.0.1:8000`。
-
-### 部署与辅助目录
-
-- `nginx/artRatingSystem.conf`：Nginx 示例；监听 80，将普通页面代理到 Vite，将 API 和上传文件代理到 FastAPI，并允许最大 500 MB 请求体。
-- `tools/`：集中存放所有脚本；每个脚本启动后都会先执行 `cd ..`（批处理使用 `cd /d`）回到项目根目录。
-- `tools/start-windows.ps1`：Windows 环境准备，并为前后端分别打开直接运行服务的可见终端窗口。
-- `logs/`：Linux 启动脚本运行时生成的 PID 与日志目录，已被 Git 忽略。
-- `backend/uploads/`：运行时生成，按 `images/`、`videos/`、`objects/`、`thumbnails/` 保存上传内容，已被 Git 忽略。
-- `backend/venv/`、`frontend/node_modules/`、`frontend/dist/`：本地依赖或构建产物，均不应提交。
-
-## 运行时数据
-
-后端第一次启动时会创建 `backend/data.db`，包含以下表：
-
-| 表 | 用途 |
-| --- | --- |
-| `users` | 用户、密码摘要、盐、角色 |
-| `invite_codes` | 注册邀请码及使用状态 |
-| `works` | 作品元数据、文件路径、正文、隐藏状态 |
-| `ratings` | 每名用户对每件作品的各维度评分 |
-
-`data.db` 和上传文件都被 `.gitignore` 排除。备份或迁移时应同时复制 `backend/data.db` 与 `backend/uploads/`，否则数据库中的媒体路径会失效。
-
-注意：当前代码只负责建表，不会自动创建初始管理员、默认用户或邀请码。全新数据库需要预先写入一个 `role='admin'` 的账号，管理员登录后才能生成邀请码并上传作品。不要直接写入明文密码；账号密码字段必须使用 `user_repository.hash_password()` 生成的摘要与盐。
-
-## 配置
-
-后端读取以下环境变量：
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `APP_SECRET_KEY` | 开发用固定字符串 | Cookie 签名密钥；生产环境必须替换为随机强密钥 |
-| `CORS_ORIGINS` | `http://localhost:7999,http://127.0.0.1:7999` | 逗号分隔的允许来源 |
-
-前端构建时可使用：
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `VITE_API_BASE_URL` | 空（同源请求） | API 与媒体文件的后端根地址 |
-
-PowerShell 临时设置示例：
+Windows PowerShell：
 
 ```powershell
-$env:APP_SECRET_KEY = "请替换为足够长的随机字符串"
-$env:CORS_ORIGINS = "https://example.com"
-tools\start.bat -SkipInstall
+New-Item -ItemType Directory -Force "$HOME\.agents\skills" | Out-Null
+Copy-Item -Recurse -Force ".agents\skills\art-rating-system-maintainer" "$HOME\.agents\skills\"
 ```
 
-## API 概览
+项目级和用户级存在同名 Skill 时，Codex 不会合并它们，选择器中可能同时出现两个版本。对本项目而言，保留项目级版本通常更容易随 Git 同步。
 
-- 认证：`POST /api/login`、`POST /api/register`、`POST /api/logout`、`POST /api/change-password`
-- 作品：`GET /api/works`、`GET /api/works/unrated`、`GET /api/works/{id}`
-- 管理作品：`POST /api/works/upload`、`PUT/DELETE /api/works/{id}`、`POST /api/works/{id}/toggle-hidden`
-- 评分：`GET /api/works/{id}/dimensions`、`GET /api/works/{id}/my-rating`、`POST /api/works/{id}/rate`
-- 管理：`GET/POST /api/admin/invite-codes`、`GET /api/admin/users`
+Codex 官方文档：[Build skills](https://learn.chatgpt.com/docs/build-skills)。
 
-请求字段和可交互调试页面以运行后的 `/docs` 为准。
+## 导入 Trae
 
-## 修改指南
+Trae 使用项目规则，而不是 Codex/Claude 的原生 Skill 目录。项目规则目录为：
 
-- 新增页面：在 `frontend/src/views/` 创建页面，并在 `frontend/src/router/index.js` 注册路由。
-- 新增通用 UI：放入 `frontend/src/components/`；全局样式放入 `frontend/src/assets/style.css`。
-- 新增接口：在 `backend/app/controllers/` 定义路由；业务规则放入 `services/`；SQL 放入 `repositories/`。
-- 修改数据库结构：更新 `backend/app/core/database.py`，为已有数据库补充幂等迁移，并同步修改 repository。
-- 新增作品类型：同时修改后端 `work_service.py` 的分类/扩展名规则、评分或存储逻辑，以及前端筛选、上传与媒体展示组件。
-- 修改开发端口：同步检查 `frontend/package.json`、`frontend/vite.config.js`、启动脚本、CORS 默认值和 Nginx 配置。
+```text
+.trae/rules/
+```
 
-`tools/upload.bat/.sh` 会直接提交并推送 `main`，`tools/download.bat/.sh` 会拉取远端 `main`。使用这些脚本前应先检查 `git status`，避免误提交本地改动。
+因此需要把 Skill 转换成 Trae 项目规则：
+
+1. 在项目根目录创建 `.trae/rules/`；
+2. 复制 `SKILL.md` 的指令正文；
+3. 保存为 `.trae/rules/art-rating-system-maintainer.md`；
+4. 在 Trae 设置中心确认项目规则已经被识别；
+5. 根据需要设置规则的应用模式、`description` 或 `globs`。
+
+macOS/Linux 示例：
+
+```bash
+mkdir -p .trae/rules
+cp .agents/skills/art-rating-system-maintainer/SKILL.md \
+  .trae/rules/art-rating-system-maintainer.md
+```
+
+Windows PowerShell 示例：
+
+```powershell
+New-Item -ItemType Directory -Force ".trae\rules" | Out-Null
+Copy-Item ".agents\skills\art-rating-system-maintainer\SKILL.md" ".trae\rules\art-rating-system-maintainer.md"
+```
+
+复制后建议把 Codex 专用的 UI 元数据和显式 `$skill-name` 调用说明改写为普通 Trae 规则。Trae 会递归读取 `.trae/rules/`，但不会使用 `agents/openai.yaml`。
+
+Trae 还支持在项目根目录复用 `AGENTS.md`、`CLAUDE.md` 和 `CLAUDE.local.md`。如果需要多个 AI 工具共享同一套项目规则，也可以把核心维护约束整理到根目录 `AGENTS.md`，再保留各工具自己的格式文件。
+
+Trae 官方文档：[Rules](https://docs.trae.ai/ide/rules)。
+
+## 导入 Claude Code
+
+Claude Code 原生 Skill 的项目级目录为：
+
+```text
+.claude/skills/<skill-name>/SKILL.md
+```
+
+### 项目级导入（推荐）
+
+macOS/Linux：
+
+```bash
+mkdir -p .claude/skills
+cp -R .agents/skills/art-rating-system-maintainer \
+  .claude/skills/art-rating-system-maintainer
+```
+
+Windows PowerShell：
+
+```powershell
+New-Item -ItemType Directory -Force ".claude\skills" | Out-Null
+Copy-Item -Recurse -Force ".agents\skills\art-rating-system-maintainer" ".claude\skills\art-rating-system-maintainer"
+```
+
+Claude Code 读取的是 `SKILL.md`。复制后可以删除 `.claude/skills/art-rating-system-maintainer/agents/openai.yaml`，因为它是 Codex/ChatGPT 的 UI 元数据，Claude Code 不使用它。
+
+启动 Claude Code 后，可以让 Claude 根据描述自动选择 Skill，也可以显式调用：
+
+```text
+/art-rating-system-maintainer
+```
+
+### 用户级导入
+
+希望在所有项目中使用时，将 Skill 复制到：
+
+```text
+~/.claude/skills/art-rating-system-maintainer/
+```
+
+macOS/Linux：
+
+```bash
+mkdir -p ~/.claude/skills
+cp -R .agents/skills/art-rating-system-maintainer ~/.claude/skills/
+```
+
+Windows PowerShell：
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
+Copy-Item -Recurse -Force ".agents\skills\art-rating-system-maintainer" "$HOME\.claude\skills\art-rating-system-maintainer"
+```
+
+Claude Code 会从启动目录及其父目录到仓库根目录发现项目 Skills。将 Skill 放到仓库内更适合团队共享和版本管理。
+
+Claude Code 官方文档：[Extend Claude with skills](https://code.claude.com/docs/en/skills)。
+
+## 跨工具维护建议
+
+- 以 `.agents/skills/art-rating-system-maintainer/SKILL.md` 作为本仓库的主要 Skill 来源；
+- 修改 Skill 后，同步更新 Trae 规则和 Claude Code 副本，避免规则不一致；
+- Codex 的 `agents/openai.yaml` 不需要复制到 Trae，复制到 Claude Code 后也可以删除；
+- 不要把虚拟环境、依赖目录、日志、数据库、上传文件或密钥放入 Skill 目录；
+- 导入后先用一个只读请求验证规则是否触发，再执行会提交或推送代码的任务。
