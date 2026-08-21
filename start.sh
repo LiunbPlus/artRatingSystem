@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUN_DIR="$PROJECT_DIR/nginx"
+RUN_DIR="$PROJECT_DIR/logs"
 mkdir -p "$RUN_DIR"
 
 start_process() {
