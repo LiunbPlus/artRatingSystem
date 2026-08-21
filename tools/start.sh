@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$(dirname "${BASH_SOURCE[0]}")"
+cd ..
+PROJECT_DIR="$PWD"
 RUN_DIR="$PROJECT_DIR/logs"
 mkdir -p "$RUN_DIR"
 
