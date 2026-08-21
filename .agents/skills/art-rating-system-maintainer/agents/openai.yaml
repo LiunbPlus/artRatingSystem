@@ -1,0 +1,4 @@
+interface:
+  display_name: "Art Rating System Maintainer"
+  short_description: "Safely modify and publish this art rating project"
+  default_prompt: "Modify the art rating system project following its architecture and Git workflow."
